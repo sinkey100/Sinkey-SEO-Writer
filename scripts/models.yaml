@@ -1,0 +1,37 @@
+# 模型目录 (Model Catalog) — 无任何密钥
+#
+# 本技能默认由宿主 Agent 模型写作，不读本文件、不需要任何 Key。
+# 仅当用户「点名某步用某个具体模型」时，run_step.py 才用本文件把模型名解析成
+# 「调用方式」（endpoint / protocol / key_env / proxy）。
+#
+# 统一经 OpenRouter 调用：所有第三方模型都列在 openrouter 这一个 provider 下，
+# 只需一个 OPENROUTER_API_KEY。模型 ID 必须是 OpenRouter 目录里的 vendor/model 形式；
+# 如与 OpenRouter 实际目录不符，请按 https://openrouter.ai/models 调整。
+#
+# 字段：endpoint=API base · protocol=openai|claude · key_env=读 Key 的环境变量名
+#       · proxy=true 时走 HTTP_PROXY（未设则忽略） · models=可被用户点名的模型 ID 列表
+
+providers:
+  openrouter:
+    endpoint: "https://openrouter.ai/api/v1"
+    protocol: "openai"
+    key_env: "OPENROUTER_API_KEY"
+    proxy: true # 仅当设置了 HTTP_PROXY 才生效；没设则直连
+    models:
+      - "deepseek/deepseek-v4-flash"
+      - "deepseek/deepseek-v4-pro"
+      - "xiaomi/mimo-v2.5-pro"
+      - "google/gemini-3.1-pro-preview"
+      - "google/gemini-3.5-flash"
+      - "anthropic/claude-sonnet-4.6"
+      - "anthropic/claude-opus-4.6"
+
+# 每步推荐模型（仅建议；用户不指定时由宿主 Agent 模型完成，无需 Key）
+recommended:
+  intent: "deepseek/deepseek-v4-flash" # 定语言/地区+本地搜索词：flash 足够；中文原生好，非中文市场可换 google/gemini-3.5-flash
+  summarize: "google/gemini-3.5-flash" # 长上下文忠实压缩、便宜；结果特别多时换 google/gemini-3.1-pro-preview（或把 kimi-k2.5 加进 catalog）
+  outline: "anthropic/claude-sonnet-4.6" # 本地化策略+关键词布局：sonnet 判断更准；想更省可留 google/gemini-3.1-pro-preview
+  content: "anthropic/claude-opus-4.6" # 原生写作质量天花板；中文市场可用 deepseek/deepseek-v4-pro 省钱
+  seo_metadata: "deepseek/deepseek-v4-flash" # 短/结构化/卡字数：flash 够
+  # 多语言（默认：统一大纲+各地区正文）：大纲跑一次(主语言)，content 每语言各跑一次；
+  # content 用 opus/便宜模型按市场价值分级。进阶「从意图各自独立」则每语言整条线重跑。
