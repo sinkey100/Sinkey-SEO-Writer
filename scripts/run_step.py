@@ -14,6 +14,8 @@
 多语言：每个目标语言各跑一次 content（改 target_language），从同一份大纲原生生成，而非翻译成稿。
 
 输入: stdin 传 JSON（键见各步占位符）；也可用 --input FILE。
+成本: 加 --usage（默认关）时，跑完向 stderr 输出一行 `[[USAGE]] {...}`，含 token 用量与
+      cost_usd；cost 仅 OpenRouter 模型提供。不加该标志则公开行为与旧版完全一致。
 退出码: 0 成功；2 缺对应 API Key；3 未知模型/步骤；1 其他错误。
 """
 
@@ -67,6 +69,25 @@ def _fill(template: str, data: dict, placeholders: list) -> str:
     return out
 
 
+def _emit_usage(step: str, model: str, usage: dict) -> None:
+    """把本步 OpenRouter 用量/成本以 [[USAGE]] 前缀打到 stderr（不污染 stdout 正文）。
+
+    调用方（如发布技能的宿主 Agent）收集所有 [[USAGE]] 行即可汇总成本明细。
+    cost_usd 来自 OpenRouter 的 usage.cost（美元）；未开启用量或非 OpenRouter 时为空。
+    """
+    if not usage:
+        return
+    info = {
+        "step": step,
+        "model": model,
+        "prompt_tokens": usage.get("prompt_tokens"),
+        "completion_tokens": usage.get("completion_tokens"),
+        "total_tokens": usage.get("total_tokens"),
+        "cost_usd": usage.get("cost"),
+    }
+    print("[[USAGE]] " + json.dumps(info, ensure_ascii=False), file=sys.stderr)
+
+
 def _extract_json_object(text: str) -> str:
     cleaned = re.sub(r"```json\s*|\s*```", "", text).strip()
     match = re.search(r"\{.*\}", cleaned, re.DOTALL)
@@ -83,6 +104,8 @@ def main() -> int:
     parser.add_argument("--step", required=True, choices=sorted(_STEP_PLACEHOLDERS))
     parser.add_argument("--model", required=True, help="models.yaml 中登记的模型名")
     parser.add_argument("--input", help="输入 JSON 文件（默认从 stdin 读）")
+    parser.add_argument("--usage", action="store_true",
+                        help="跑完向 stderr 输出一行 [[USAGE]] 用量/成本 JSON（默认关；cost 仅 OpenRouter）")
     args = parser.parse_args()
 
     raw = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
@@ -100,12 +123,15 @@ def main() -> int:
 
     prompt = _fill(template, data, _STEP_PLACEHOLDERS[args.step])
 
+    # 默认不收集用量（usage=None → 不向 OpenRouter 请求 usage、不打印），公开行为零变化；
+    # 仅当显式 --usage 时才传入收集容器并在末尾汇报。
+    usage = {} if args.usage else None
     try:
         if args.step in _NON_STREAMING:
-            full = _client.generate_full(prompt, args.model)
+            full = _client.generate_full(prompt, args.model, usage=usage)
             print(_extract_json_object(full))
         else:
-            for chunk in _client.generate_stream(prompt, args.model):
+            for chunk in _client.generate_stream(prompt, args.model, usage=usage):
                 sys.stdout.write(chunk)
                 sys.stdout.flush()
             sys.stdout.write("\n")
@@ -119,6 +145,8 @@ def main() -> int:
         print(f"调用失败: {exc}", file=sys.stderr)
         return 1
 
+    if args.usage:
+        _emit_usage(args.step, args.model, usage)
     return 0
 
 

@@ -199,7 +199,7 @@ def _post_stream(url: str, headers: Dict[str, str], payload: dict, use_proxy: bo
         raise LLMError(f"无法连接 LLM API: {exc.reason}") from exc
 
 
-def _openai_stream(prompt: str, cfg: Dict) -> Iterator[str]:
+def _openai_stream(prompt: str, cfg: Dict, usage: Optional[Dict] = None) -> Iterator[str]:
     headers = {
         "Authorization": f"Bearer {cfg['api_key']}",
         "Content-Type": "application/json",
@@ -210,6 +210,10 @@ def _openai_stream(prompt: str, cfg: Dict) -> Iterator[str]:
         "stream": True,
         "temperature": 0.7,
     }
+    # OpenRouter「用量计费」扩展：在响应（含流式最后一个 chunk）里回传 token 用量与成本(USD)。
+    # 仅在调用方要 usage 且端点是 OpenRouter 时开启，避免影响其它 OpenAI 兼容端点。
+    if usage is not None and "openrouter" in cfg["endpoint"]:
+        payload["usage"] = {"include": True}
     for line in _post_stream(f"{cfg['endpoint']}/chat/completions", headers, payload, cfg["proxy"]):
         if not line.startswith("data: "):
             continue
@@ -220,6 +224,8 @@ def _openai_stream(prompt: str, cfg: Dict) -> Iterator[str]:
             chunk = json.loads(payload_str)
         except json.JSONDecodeError:
             continue
+        if usage is not None and isinstance(chunk.get("usage"), dict):
+            usage.update(chunk["usage"])  # 末尾 chunk 携带最终用量+cost
         choices = chunk.get("choices") or []
         if choices:
             content = (choices[0].get("delta") or {}).get("content")
@@ -252,13 +258,15 @@ def _claude_stream(prompt: str, cfg: Dict) -> Iterator[str]:
                 yield text
 
 
-def generate_stream(prompt: str, model_name: str, catalog: Optional[dict] = None) -> Iterator[str]:
+def generate_stream(prompt: str, model_name: str, catalog: Optional[dict] = None,
+                    usage: Optional[Dict] = None) -> Iterator[str]:
     cfg = resolve_model(model_name, catalog)
     if cfg["protocol"] == "claude":
-        yield from _claude_stream(prompt, cfg)
+        yield from _claude_stream(prompt, cfg)  # claude 原生协议（本技能未用）不回传 cost
     else:
-        yield from _openai_stream(prompt, cfg)
+        yield from _openai_stream(prompt, cfg, usage=usage)
 
 
-def generate_full(prompt: str, model_name: str, catalog: Optional[dict] = None) -> str:
-    return "".join(generate_stream(prompt, model_name, catalog))
+def generate_full(prompt: str, model_name: str, catalog: Optional[dict] = None,
+                  usage: Optional[Dict] = None) -> str:
+    return "".join(generate_stream(prompt, model_name, catalog, usage=usage))

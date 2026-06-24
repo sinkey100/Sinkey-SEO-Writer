@@ -62,6 +62,8 @@
 
 退出码：`0` 成功；`2` 缺对应 API Key（把错误转达用户，不重试）；`3` 未知模型/步骤；`1` 其他。
 
+成本（可选）：给 `run_step.py` 加 `--usage`（默认关）时，正文/结果照常走 stdout，并在跑完向 **stderr** 多打一行 `[[USAGE]] {"step","model","prompt_tokens","completion_tokens","total_tokens","cost_usd"}`。`cost_usd` 仅 OpenRouter 模型有值（来自 OpenRouter `usage.cost`，美元）。**宿主 Agent 若要给用户汇报费用：调用时带 `--usage`，收集所有 `[[USAGE]]` 行求和即可。** 不带该标志则行为与旧版完全一致（stdout 不变、不打印该行）。
+
 ## 写作要点（默认宿主模型也须遵守）
 - **正文**：E-E-A-T + 费曼降维、短句、列表化、段落≤4 行、加粗重点；严禁编造参数/价格；保持第三方中立；无开场白/结束语/竞品推荐。
 - **语言/地区**：summarize/outline 用主语言；content 用各 `target_language` 原生写 + 本地化关键词（不要直译大纲里的词）。结构/章节/观点与统一大纲保持一致（跨语言对应得上）。本地化日期/货币/度量与案例；品牌名保留。
